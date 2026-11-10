@@ -1,0 +1,73 @@
+# Compile le client web d'OpenAudioMc et le publie sur https://audio.puyducraft.com
+# (GitHub Pages). Se relance tout seul chaque lundi pour suivre les mises à jour
+# d'OpenAudioMc, ou à la main depuis l'onglet Actions (« Run workflow »).
+
+name: Client OpenAudioMc
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"   # chaque lundi vers 5 h (heure de Paris)
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  DOMAINE: audio.puyducraft.com
+
+jobs:
+  compiler:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer OpenAudioMc
+        uses: actions/checkout@v4
+        with:
+          repository: Mindgamesnl/OpenAudioMc
+          path: openaudiomc
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Compiler le client
+        working-directory: openaudiomc/client
+        run: |
+          npm install
+          npm run build
+
+      - name: Préparer le site
+        run: |
+          # Le dossier de sortie s'appelle « build » (doc OpenAudioMc), ou « dist » (Vite par défaut)
+          if [ -d openaudiomc/client/build ]; then SORTIE=openaudiomc/client/build
+          elif [ -d openaudiomc/client/dist ]; then SORTIE=openaudiomc/client/dist
+          else echo "Dossier de sortie introuvable"; ls openaudiomc/client; exit 1; fi
+          mkdir site
+          cp -r "$SORTIE"/. site/
+          echo "$DOMAINE" > site/CNAME
+          touch site/.nojekyll
+          echo "Version d'OpenAudioMc : $(git -C openaudiomc rev-parse --short HEAD)"
+
+      - name: Envoyer le site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  publier:
+    needs: compiler
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - name: Publier sur GitHub Pages
+        id: deploiement
+        uses: actions/deploy-pages@v4
